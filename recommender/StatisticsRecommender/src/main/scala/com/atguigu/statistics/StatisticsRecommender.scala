@@ -44,7 +44,7 @@ object StatisticsRecommender {
   def main(args: Array[String]): Unit = {
     val config = Map(
       "spark.cores" -> "local[*]",
-      "mongo.uri" -> "mongodb://localhost:27017/recommender",
+      "mongo.uri" -> "mongodb://foo-1:27017/recommender",
       "mongo.db" -> "recommender"
     )
 
@@ -116,6 +116,7 @@ object StatisticsRecommender {
     val genresRDD = spark.sparkContext.makeRDD(genres)
 
     // 计算类别top10，首先对类别和电影做笛卡尔积
+    // TODO: 这里需要用笛卡尔积，不能用join，因为两个rdd的字段值不一致（genresRDD的类别是一个一个的，而movieWithScore的类别是一个字段包含多个类别，中间用|分割的）
     val genresTopMoviesDF = genresRDD.cartesian(movieWithScore.rdd)
       .filter{
         // 条件过滤，找出movie的字段genres值(Action|Adventure|Sci-Fi)包含当前类别genre(Action)的那些

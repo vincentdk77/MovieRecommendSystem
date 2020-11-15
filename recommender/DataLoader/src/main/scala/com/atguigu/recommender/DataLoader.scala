@@ -4,14 +4,13 @@ import java.net.InetAddress
 
 import com.mongodb.casbah.commons.MongoDBObject
 import com.mongodb.casbah.{MongoClient, MongoClientURI}
+import org.apache.http.HttpHost
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest
-import org.elasticsearch.common.settings.Settings
-import org.elasticsearch.common.transport.InetSocketTransportAddress
-import org.elasticsearch.transport.client.PreBuiltTransportClient
+import org.elasticsearch.client.{RestClient, RestHighLevelClient}
 
 /**
   * Copyright (c) 2018-2028 尚硅谷 All Rights Reserved 
@@ -76,9 +75,9 @@ case class ESConfig(httpHosts:String, transportHosts:String, index:String, clust
 object DataLoader {
 
   // 定义常量
-  val MOVIE_DATA_PATH = "D:\\Projects\\BigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\movies.csv"
-  val RATING_DATA_PATH = "D:\\Projects\\BigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\ratings.csv"
-  val TAG_DATA_PATH = "D:\\Projects\\BigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\tags.csv"
+  val MOVIE_DATA_PATH = "D:\\Java_Relation\\WorkSpaces\\myproject\\bigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\movies.csv"
+  val RATING_DATA_PATH = "D:\\Java_Relation\\WorkSpaces\\myproject\\bigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\ratings.csv"
+  val TAG_DATA_PATH = "D:\\Java_Relation\\WorkSpaces\\myproject\\bigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\tags.csv"
 
   val MONGODB_MOVIE_COLLECTION = "Movie"
   val MONGODB_RATING_COLLECTION = "Rating"
@@ -89,10 +88,10 @@ object DataLoader {
 
     val config = Map(
       "spark.cores" -> "local[*]",
-      "mongo.uri" -> "mongodb://localhost:27017/recommender",
+      "mongo.uri" -> "mongodb://foo-1:27017/recommender",
       "mongo.db" -> "recommender",
-      "es.httpHosts" -> "localhost:9200",
-      "es.transportHosts" -> "localhost:9300",
+      "es.httpHosts" -> "foo-1:9200",
+      "es.transportHosts" -> "foo-1:9300",
       "es.index" -> "recommender",
       "es.cluster.name" -> "elasticsearch"
     )
@@ -132,7 +131,7 @@ object DataLoader {
     implicit val mongoConfig = MongoConfig(config("mongo.uri"), config("mongo.db"))
 
     // 将数据保存到MongoDB
-    storeDataInMongoDB(movieDF, ratingDF, tagDF)
+//    storeDataInMongoDB(movieDF, ratingDF, tagDF)
 
     // 数据预处理，把movie对应的tag信息添加进去，加一列 tag1|tag2|tag3...
     import org.apache.spark.sql.functions._
@@ -200,28 +199,32 @@ object DataLoader {
   }
 
   def storeDataInES(movieDF: DataFrame)(implicit eSConfig: ESConfig): Unit ={
-    // 新建es配置
-    val settings: Settings = Settings.builder().put("cluster.name", eSConfig.clustername).build()
+    // TODO: 配置的是单机版，先不用集群！
+//    // 新建es配置
+//    val settings: Settings = Settings.builder().put("cluster.name", eSConfig.clustername).build()
+//
+//    // 新建一个es客户端
+//    val esClient = new PreBuiltTransportClient(settings)
+//
+//    val REGEX_HOST_PORT = "(.+):(\\d+)".r
+//    eSConfig.transportHosts.split(",").foreach{
+//      case REGEX_HOST_PORT(host: String, port: String) => {
+//        esClient.addTransportAddress(new InetSocketTransportAddress( InetAddress.getByName(host), port.toInt ))
+//      }
+//    }
+//
+//    // 先清理遗留的数据
+//    if( esClient.admin().indices().exists( new IndicesExistsRequest(eSConfig.index) )
+//        .actionGet()
+//        .isExists
+//    ){
+//      esClient.admin().indices().delete( new DeleteIndexRequest(eSConfig.index) )
+//    }
+//
+//    esClient.admin().indices().create( new CreateIndexRequest(eSConfig.index) )
 
-    // 新建一个es客户端
-    val esClient = new PreBuiltTransportClient(settings)
-
-    val REGEX_HOST_PORT = "(.+):(\\d+)".r
-    eSConfig.transportHosts.split(",").foreach{
-      case REGEX_HOST_PORT(host: String, port: String) => {
-        esClient.addTransportAddress(new InetSocketTransportAddress( InetAddress.getByName(host), port.toInt ))
-      }
-    }
-
-    // 先清理遗留的数据
-    if( esClient.admin().indices().exists( new IndicesExistsRequest(eSConfig.index) )
-        .actionGet()
-        .isExists
-    ){
-      esClient.admin().indices().delete( new DeleteIndexRequest(eSConfig.index) )
-    }
-
-    esClient.admin().indices().create( new CreateIndexRequest(eSConfig.index) )
+//    val client = new RestHighLevelClient(RestClient.builder(new HttpHost("foo-1", 9200, "http")))
+//    client.indices().exists()
 
     movieDF.write
       .option("es.nodes", eSConfig.httpHosts)
