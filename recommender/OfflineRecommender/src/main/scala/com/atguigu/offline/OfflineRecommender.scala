@@ -72,9 +72,10 @@ object OfflineRecommender {
     val userRDD: RDD[Int] = ratingRDD.map(_._1).distinct()
     val movieRDD: RDD[Int] = ratingRDD.map(_._2).distinct()
 
-    // 训练隐语义模型
+    // 训练隐语义模型  todo
     val trainData: RDD[Rating] = ratingRDD.map( x => Rating(x._1, x._2, x._3) )
 
+      //rank：隐特征的维度     iterations：迭代次数    lambda：正则化系数
     val (rank, iterations, lambda) = (200, 5, 0.1)
     val model: MatrixFactorizationModel = ALS.train(trainData, rank, iterations, lambda)
 
