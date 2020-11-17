@@ -1,12 +1,13 @@
 package com.atguigu.offline
 
 import org.apache.spark.SparkConf
-import org.apache.spark.mllib.recommendation.{ALS, Rating}
+import org.apache.spark.mllib.recommendation.{ALS, MatrixFactorizationModel, Rating}
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.jblas.DoubleMatrix
 
 /**
-  * Copyright (c) 2018-2028 尚硅谷 All Rights Reserved 
+  * Copyright (c) 2018-2028 尚硅谷 All Rights Reserved
   *
   * Project: MovieRecommendSystem
   * Package: com.atguigu.offline
@@ -42,7 +43,7 @@ object OfflineRecommender {
   def main(args: Array[String]): Unit = {
     val config = Map(
       "spark.cores" -> "local[*]",
-      "mongo.uri" -> "mongodb://localhost:27017/recommender",
+      "mongo.uri" -> "mongodb://foo-1:27017/recommender",
       "mongo.db" -> "recommender"
     )
 
@@ -68,21 +69,21 @@ object OfflineRecommender {
       .cache()
 
     // 从rating数据中提取所有的uid和mid，并去重
-    val userRDD = ratingRDD.map(_._1).distinct()
-    val movieRDD = ratingRDD.map(_._2).distinct()
+    val userRDD: RDD[Int] = ratingRDD.map(_._1).distinct()
+    val movieRDD: RDD[Int] = ratingRDD.map(_._2).distinct()
 
     // 训练隐语义模型
-    val trainData = ratingRDD.map( x => Rating(x._1, x._2, x._3) )
+    val trainData: RDD[Rating] = ratingRDD.map( x => Rating(x._1, x._2, x._3) )
 
     val (rank, iterations, lambda) = (200, 5, 0.1)
-    val model = ALS.train(trainData, rank, iterations, lambda)
+    val model: MatrixFactorizationModel = ALS.train(trainData, rank, iterations, lambda)
 
     // 基于用户和电影的隐特征，计算预测评分，得到用户的推荐列表
     // 计算user和movie的笛卡尔积，得到一个空评分矩阵
-    val userMovies = userRDD.cartesian(movieRDD)
+    val userMovies: RDD[(Int, Int)] = userRDD.cartesian(movieRDD)
 
     // 调用model的predict方法预测评分
-    val preRatings = model.predict(userMovies)
+    val preRatings: RDD[Rating] = model.predict(userMovies)
 
     val userRecs = preRatings
       .filter(_.rating > 0)    // 过滤出评分大于0的项
