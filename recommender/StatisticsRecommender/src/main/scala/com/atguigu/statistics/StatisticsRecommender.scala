@@ -104,7 +104,7 @@ object StatisticsRecommender {
     val averageMoviesDF = spark.sql("select mid, avg(score) as avg from ratings group by mid")
     storeDFInMongoDB(averageMoviesDF, AVERAGE_MOVIES)
 
-    // 4. 各类别电影Top统计
+    // 4. 各类别电影Top统计  （todo 也可以用炸裂函数explode来处理吧）
     // 定义所有类别
     val genres = List("Action","Adventure","Animation","Comedy","Crime","Documentary","Drama","Family","Fantasy","Foreign","History","Horror","Music","Mystery"
       ,"Romance","Science","Tv","Thriller","War","Western")
@@ -115,7 +115,7 @@ object StatisticsRecommender {
     // 为做笛卡尔积，把genres转成rdd
     val genresRDD = spark.sparkContext.makeRDD(genres)
 
-    // 计算类别top10，首先对类别和电影做笛卡尔积
+    // 计算类别top10，首先对类别和电影做笛卡尔积（只能用rdd）
     // TODO: 这里需要用笛卡尔积，不能用join，因为两个rdd的字段值不一致（genresRDD的类别是一个一个的，而movieWithScore的类别是一个字段包含多个类别，中间用|分割的）
     val genresTopMoviesDF = genresRDD.cartesian(movieWithScore.rdd)
       .filter{

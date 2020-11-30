@@ -1,9 +1,9 @@
 package com.atguigu.content
 
 import org.apache.spark.SparkConf
-import org.apache.spark.ml.feature.{HashingTF, IDF, Tokenizer}
+import org.apache.spark.ml.feature.{HashingTF, IDF, IDFModel, Tokenizer}
 import org.apache.spark.ml.linalg.SparseVector
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.jblas.DoubleMatrix
 
 /**
@@ -38,7 +38,7 @@ object ContentRecommender {
   def main(args: Array[String]): Unit = {
     val config = Map(
       "spark.cores" -> "local[*]",
-      "mongo.uri" -> "mongodb://localhost:27017/recommender",
+      "mongo.uri" -> "mongodb://foo-1:27017/recommender",
       "mongo.db" -> "recommender"
     )
 
@@ -68,22 +68,23 @@ object ContentRecommender {
     // 核心部分： 用TF-IDF从内容信息中提取电影特征向量
 
     // 创建一个分词器，默认按空格分词
-    val tokenizer = new Tokenizer().setInputCol("genres").setOutputCol("words")
+    val tokenizer: Tokenizer = new Tokenizer().setInputCol("genres").setOutputCol("words")
 
     // 用分词器对原始数据做转换，生成新的一列words
-    val wordsData = tokenizer.transform(movieTagsDF)
+    val wordsData: DataFrame = tokenizer.transform(movieTagsDF)//输出: [action,sci-fi]    [drama,horror,thriller]
 
     // 引入HashingTF工具，可以把一个词语序列转化成对应的词频
-    val hashingTF = new HashingTF().setInputCol("words").setOutputCol("rawFeatures").setNumFeatures(50)
-    val featurizedData = hashingTF.transform(wordsData)
+    val hashingTF: HashingTF = new HashingTF().setInputCol("words").setOutputCol("rawFeatures").setNumFeatures(50)//设置维度为50
+    val featurizedData: DataFrame = hashingTF.transform(wordsData)//输出： (50,[40,46],[1.0,1.0])        (50,[26,27,36],[1.0,1.0,1.0])
 
     // 引入IDF工具，可以得到idf模型
-    val idf = new IDF().setInputCol("rawFeatures").setOutputCol("features")
+    val idf: IDF = new IDF().setInputCol("rawFeatures").setOutputCol("features")
     // 训练idf模型，得到每个词的逆文档频率
-    val idfModel = idf.fit(featurizedData)
+    val idfModel: IDFModel = idf.fit(featurizedData)
     // 用模型对原数据进行处理，得到文档中每个词的tf-idf，作为新的特征向量
-    val rescaledData = idfModel.transform(featurizedData)
+    val rescaledData: DataFrame = idfModel.transform(featurizedData)//输出： (50,[40,46],[1.82..,2.405...])        (50,[26,27,36],[2.1947..,0.7605..,1.7079..])
 
+    // TODO: truncate = false 打印的时候输出全部，而不是超出长度显示"..."
 //    rescaledData.show(truncate = false)
 
     val movieFeatures = rescaledData.map(
@@ -93,7 +94,10 @@ object ContentRecommender {
       .map(
         x => ( x._1, new DoubleMatrix(x._2) )
       )
-    movieFeatures.collect().foreach(println)
+    movieFeatures.collect().foreach(println)  //输出稠密的向量：(1889,[0.0; 0.0; 0.0; 0.0; 2.8046147489591897; 0.0; 0.0; 0.0; 0.0; 0.0;......])
+
+
+    //下面部分与offlineRecommender一致！！
 
     // 对所有电影两两计算它们的相似度，先做笛卡尔积
     val movieRecs = movieFeatures.cartesian(movieFeatures)
