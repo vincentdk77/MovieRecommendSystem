@@ -82,19 +82,21 @@ object ContentRecommender {
     // 训练idf模型，得到每个词的逆文档频率
     val idfModel: IDFModel = idf.fit(featurizedData)
     // 用模型对原数据进行处理，得到文档中每个词的tf-idf，作为新的特征向量
-    val rescaledData: DataFrame = idfModel.transform(featurizedData)//输出： (50,[40,46],[1.82..,2.405...])        (50,[26,27,36],[2.1947..,0.7605..,1.7079..])
+    val rescaledData: DataFrame = idfModel.transform(featurizedData)//输出（只有自己有的特征的维度的向量）： (50,[40,46],[1.82..,2.405...])        (50,[26,27,36],[2.1947..,0.7605..,1.7079..])
 
-    // TODO: truncate = false 打印的时候输出全部，而不是超出长度显示"..."
+    // TODO: DF与DS的打印方式，   truncate = false 打印的时候输出全部，而不是超出长度显示"..."
 //    rescaledData.show(truncate = false)
 
     val movieFeatures = rescaledData.map(
-      row => ( row.getAs[Int]("mid"), row.getAs[SparseVector]("features").toArray )
+      row => ( row.getAs[Int]("mid"), row.getAs[SparseVector]("features").toArray )//SparseVector:指的是稀疏向量   (Vector.toArray后变成稠密向量)
     )
       .rdd
       .map(
         x => ( x._1, new DoubleMatrix(x._2) )
       )
-    movieFeatures.collect().foreach(println)  //输出稠密的向量：(1889,[0.0; 0.0; 0.0; 0.0; 2.8046147489591897; 0.0; 0.0; 0.0; 0.0; 0.0;......])
+
+    // TODO: rdd的打印方式
+    movieFeatures.collect().foreach(println)  //输出（50个维度的稠密的向量）：(1889,[0.0; 0.0; 0.0; 0.0; 2.8046147489591897; 0.0; 0.0; 0.0; 0.0; 0.0;......])
 
 
     //下面部分与offlineRecommender一致！！

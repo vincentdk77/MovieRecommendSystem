@@ -77,13 +77,14 @@ object OfflineRecommender {
 
       //rank：隐特征的维度     iterations：迭代次数    lambda：正则化系数
     val (rank, iterations, lambda) = (200, 5, 0.1)
+    // TODO: 这里的模型其实就可以分为用户p、产品q两个隐特征，可以通过model获取，后面的电影隐特征就是这样获取的
     val model: MatrixFactorizationModel = ALS.train(trainData, rank, iterations, lambda)
 
     // 基于用户和电影的隐特征，计算预测评分，得到用户的推荐列表
     // 计算user和movie的笛卡尔积，得到一个空评分矩阵
     val userMovies: RDD[(Int, Int)] = userRDD.cartesian(movieRDD)
 
-    // 调用model的predict方法预测评分
+    // 调用model的predict方法预测评分  （也支持只传一组user与product，为这一组评分）
     val preRatings: RDD[Rating] = model.predict(userMovies)
 
     val userRecs = preRatings
@@ -107,7 +108,7 @@ object OfflineRecommender {
       case (mid, features) => (mid, new DoubleMatrix(features))
     }
 
-    // 对所有电影两两计算它们的相似度，先做笛卡尔积
+    // 对所有电影两两计算它们的相似度，先做笛卡尔积（为了获取任意两个电影的相似度）
     val movieRecs = movieFeatures.cartesian(movieFeatures)
       .filter{
         // 把自己跟自己的配对过滤掉

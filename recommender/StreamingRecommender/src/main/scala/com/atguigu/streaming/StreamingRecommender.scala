@@ -48,7 +48,7 @@ object StreamingRecommender {
   def main(args: Array[String]): Unit = {
     val config = Map(
       "spark.cores" -> "local[*]",
-      "mongo.uri" -> "mongodb://localhost:27017/recommender",
+      "mongo.uri" -> "mongodb://foo-1:27017/recommender",
       "mongo.db" -> "recommender",
       "kafka.topic" -> "recommender"
     )
@@ -104,7 +104,7 @@ object StreamingRecommender {
     // 继续做流式处理，核心实时算法部分
     ratingStream.foreachRDD{
       rdds => rdds.foreach{
-        case (uid, mid, score, timestamp) => {
+        case (uid, mid, score, timestamp) => { // TODO: 本次评分是没有用的，应该redis中的最近K次评分（包含了本次评分）
           println("rating data coming! >>>>>>>>>>>>>>>>")
 
           // 1. 从redis里获取当前用户最近的K次评分，保存成Array[(mid, score)]
@@ -154,8 +154,8 @@ object StreamingRecommender {
     */
   def getTopSimMovies(num: Int, mid: Int, uid: Int, simMovies: scala.collection.Map[Int, scala.collection.immutable.Map[Int, Double]])
                      (implicit mongoConfig: MongoConfig): Array[Int] ={
-    // 1. 从相似度矩阵中拿到所有相似的电影
-    val allSimMovies = simMovies(mid).toArray
+    // 1. 从相似度矩阵中拿到跟当前电影相似的电影（转成数组，方便sort，map不好排序）
+    val allSimMovies: Array[(Int, Double)] = simMovies(mid).toArray
 
     // 2. 从mongodb中查询用户已看过的电影
     val ratingExist = ConnHelper.mongoClient(mongoConfig.db)(MONGODB_RATING_COLLECTION)
@@ -181,13 +181,14 @@ object StreamingRecommender {
     val increMap = scala.collection.mutable.HashMap[Int, Int]()
     val decreMap = scala.collection.mutable.HashMap[Int, Int]()
 
+    // TODO: scala的嵌套for循环！
     for( candidateMovie <- candidateMovies; userRecentlyRating <- userRecentlyRatings){
       // 拿到备选电影和最近评分电影的相似度
       val simScore = getMoviesSimScore( candidateMovie, userRecentlyRating._1, simMovies )
 
       if(simScore > 0.7){
         // 计算备选电影的基础推荐得分
-        scores += ( (candidateMovie, simScore * userRecentlyRating._2) )
+        scores += ( (candidateMovie, simScore * userRecentlyRating._2) )//（todo 因为备选电影是从电影相似度矩阵中拿到的，跟用户评分没有关系！）
         if( userRecentlyRating._2 > 3 ){
           increMap(candidateMovie) = increMap.getOrDefault(candidateMovie, 0) + 1
         } else{
@@ -196,7 +197,7 @@ object StreamingRecommender {
       }
     }
     // 根据备选电影的mid做groupby，根据公式去求最后的推荐评分
-    scores.groupBy(_._1).map{
+    scores.groupBy(_._1).map{//因为是嵌套for循环得到的，所以candidateMovie会有重复的！
       // groupBy之后得到的数据 Map( mid -> ArrayBuffer[(mid, score)] )
       case (mid, scoreList) =>
         ( mid, scoreList.map(_._2).sum / scoreList.length + log(increMap.getOrDefault(mid, 1)) - log(decreMap.getOrDefault(mid, 1)) )
