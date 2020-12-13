@@ -3,9 +3,11 @@ package com.atguigu.streaming
 import com.mongodb.casbah.commons.MongoDBObject
 import com.mongodb.casbah.{MongoClient, MongoClientURI}
 import kafka.Kafka
+import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.streaming.dstream.InputDStream
 import org.apache.spark.streaming.kafka010.{ConsumerStrategies, KafkaUtils, LocationStrategies}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import redis.clients.jedis.Jedis
@@ -67,15 +69,16 @@ object StreamingRecommender {
     implicit val mongoConfig = MongoConfig(config("mongo.uri"), config("mongo.db"))
 
     // 加载电影相似度矩阵数据，把它广播出去
-    val simMovieMatrix = spark.read
+    val simMovieMatrix: collection.Map[Int, Map[Int, Double]] =
+      spark.read
       .option("uri", mongoConfig.uri)
       .option("collection", MONGODB_MOVIE_RECS_COLLECTION)
       .format("com.mongodb.spark.sql")
       .load()
       .as[MovieRecs]
-      .rdd
-      .map{ movieRecs => // 为了查询相似度方便，转换成map
-        (movieRecs.mid, movieRecs.recs.map( x=> (x.mid, x.score) ).toMap )
+      .rdd //todo 这里转成rdd的原因是要将他转成map形式，只有rdd才有这个算子
+      .map { movieRecs => // 为了查询相似度方便，转换成map
+        (movieRecs.mid, movieRecs.recs.map(x => (x.mid, x.score)).toMap)
       }.collectAsMap()
 
     val simMovieMatrixBroadCast = sc.broadcast(simMovieMatrix)
@@ -88,11 +91,14 @@ object StreamingRecommender {
       "group.id" -> "recommender",
       "auto.offset.reset" -> "latest"
     )
+
     // 通过kafka创建一个DStream
-    val kafkaStream = KafkaUtils.createDirectStream[String, String]( ssc,
-      LocationStrategies.PreferConsistent,
-      ConsumerStrategies.Subscribe[String, String]( Array(config("kafka.topic")), kafkaParam )
-    )
+    val kafkaStream: InputDStream[ConsumerRecord[String, String]] =
+      KafkaUtils.createDirectStream[String, String](
+        ssc,
+        LocationStrategies.PreferConsistent,
+        ConsumerStrategies.Subscribe[String, String](Array(config("kafka.topic")), kafkaParam)
+      )
 
     // 把原始数据UID|MID|SCORE|TIMESTAMP 转换成评分流
     val ratingStream = kafkaStream.map{
@@ -104,17 +110,17 @@ object StreamingRecommender {
     // 继续做流式处理，核心实时算法部分
     ratingStream.foreachRDD{
       rdds => rdds.foreach{
-        case (uid, mid, score, timestamp) => { // TODO: 本次评分是没有用的，应该redis中的最近K次评分（包含了本次评分）
+        case (uid, mid, score, timestamp) => {//todo 本次评分是没有用的，应该redis中的最近K次评分（包含了本次评分）
           println("rating data coming! >>>>>>>>>>>>>>>>")
 
           // 1. 从redis里获取当前用户最近的K次评分，保存成Array[(mid, score)]
-          val userRecentlyRatings = getUserRecentlyRating( MAX_USER_RATINGS_NUM, uid, ConnHelper.jedis )
+          val userRecentlyRatings: Array[(Int, Double)] = getUserRecentlyRating(MAX_USER_RATINGS_NUM, uid, ConnHelper.jedis)
 
           // 2. 从相似度矩阵中取出当前电影最相似的N个电影，作为备选列表，Array[mid]
-          val candidateMovies = getTopSimMovies( MAX_SIM_MOVIES_NUM, mid, uid, simMovieMatrixBroadCast.value )
+          val candidateMovies: Array[Int] = getTopSimMovies(MAX_SIM_MOVIES_NUM, mid, uid, simMovieMatrixBroadCast.value)
 
-          // 3. 对每个备选电影，计算推荐优先级，得到当前用户的实时推荐列表，Array[(mid, score)]
-          val streamRecs = computeMovieScores( candidateMovies, userRecentlyRatings, simMovieMatrixBroadCast.value )
+          // 3. todo  核心！ 对每个备选电影，计算推荐优先级，得到当前用户的实时推荐列表，Array[(mid, score)]
+          val streamRecs: Array[(Int, Double)] = computeMovieScores(candidateMovies, userRecentlyRatings, simMovieMatrixBroadCast.value)
 
           // 4. 把推荐数据保存到mongodb
           saveDataToMongoDB( uid, streamRecs )
@@ -134,7 +140,9 @@ object StreamingRecommender {
   import scala.collection.JavaConversions._
 
   def getUserRecentlyRating(num: Int, uid: Int, jedis: Jedis): Array[(Int, Double)] = {
-    // 从redis读取数据，用户评分数据保存在 uid:UID 为key的队列里，value是 MID:SCORE
+    // 从redis读取数据，用户评分数据保存在 uid:UID 为key的list队列里，value是 MID:SCORE
+    // redis中的数据：  LPUSH uid:1 265:5.0 266:5.0 272:3.0 273:4.0 292:3.0 296:4.0 300:3.0
+    //                 lrange取到的数据从lpush的队首开始取
     jedis.lrange("uid:" + uid, 0, num-1)
       .map{
         item => // 具体每个评分又是以冒号分隔的两个值
@@ -154,7 +162,7 @@ object StreamingRecommender {
     */
   def getTopSimMovies(num: Int, mid: Int, uid: Int, simMovies: scala.collection.Map[Int, scala.collection.immutable.Map[Int, Double]])
                      (implicit mongoConfig: MongoConfig): Array[Int] ={
-    // 1. 从相似度矩阵中拿到跟当前电影相似的电影（转成数组，方便sort，map不好排序）
+    // 1. 从相似度矩阵中拿到跟当前电影相似的电影（ todo 将Map转成数组Array，方便sort，map不好排序）
     val allSimMovies: Array[(Int, Double)] = simMovies(mid).toArray
 
     // 2. 从mongodb中查询用户已看过的电影
@@ -167,7 +175,7 @@ object StreamingRecommender {
 
     // 3. 把看过的过滤，得到输出列表
     allSimMovies.filter( x=> ! ratingExist.contains(x._1) )
-      .sortWith(_._2>_._2)
+      .sortWith(_._2>_._2) // TODO: 注意与scala的sortBy和sortWith区分
       .take(num)
       .map(x=>x._1)
   }
@@ -181,14 +189,14 @@ object StreamingRecommender {
     val increMap = scala.collection.mutable.HashMap[Int, Int]()
     val decreMap = scala.collection.mutable.HashMap[Int, Int]()
 
-    // TODO: scala的嵌套for循环！
+    // TODO: scala的嵌套for循环！第一个是最外层循环，以此类推
     for( candidateMovie <- candidateMovies; userRecentlyRating <- userRecentlyRatings){
-      // 拿到备选电影和最近评分电影的相似度
+      // 根据相似度矩阵Map，拿到备选电影和最近评分电影的相似度simScore，拿不到的取0
       val simScore = getMoviesSimScore( candidateMovie, userRecentlyRating._1, simMovies )
 
       if(simScore > 0.7){
-        // 计算备选电影的基础推荐得分
-        scores += ( (candidateMovie, simScore * userRecentlyRating._2) )//（todo 因为备选电影是从电影相似度矩阵中拿到的，跟用户评分没有关系！）
+        // 计算备选电影的基础推荐得分（todo 因为备选电影是从电影相似度矩阵中拿到的，跟用户最近的评分没有关系！所以要求一个加权）
+        scores += ( (candidateMovie, simScore * userRecentlyRating._2) )
         if( userRecentlyRating._2 > 3 ){
           increMap(candidateMovie) = increMap.getOrDefault(candidateMovie, 0) + 1
         } else{
@@ -197,7 +205,7 @@ object StreamingRecommender {
       }
     }
     // 根据备选电影的mid做groupby，根据公式去求最后的推荐评分
-    scores.groupBy(_._1).map{//因为是嵌套for循环得到的，所以candidateMovie会有重复的！
+    scores.groupBy(_._1).map{//因为是嵌套for循环得到的，所以candidateMovie会有重复的！用groupBy去重了
       // groupBy之后得到的数据 Map( mid -> ArrayBuffer[(mid, score)] )
       case (mid, scoreList) =>
         ( mid, scoreList.map(_._2).sum / scoreList.length + log(increMap.getOrDefault(mid, 1)) - log(decreMap.getOrDefault(mid, 1)) )
