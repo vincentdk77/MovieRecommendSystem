@@ -105,7 +105,7 @@ object OfflineRecommender {
 
     // 基于电影隐特征，计算相似度矩阵，得到电影的相似度列表
     val movieFeatures = model.productFeatures.map{
-      case (mid, features) => (mid, new DoubleMatrix(features))
+      case (mid, features) => (mid, new DoubleMatrix(features)) // TODO: 特征矩阵必须转化成 DoubleMatrix 的形式计算
     }
 
     // 对所有电影两两计算它们的相似度，先做笛卡尔积（为了获取任意两个电影的相似度）
