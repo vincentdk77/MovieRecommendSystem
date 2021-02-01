@@ -66,16 +66,18 @@ object ContentRecommender {
       .cache()
 
     // 核心部分： 用TF-IDF从内容信息中提取电影特征向量
+    //todo 用tf-idf的原因是：每一种电影类型其实是不平等的，比如剧情片，就很普遍，什么电影都会有这个分类，而动画片就完全不一样了！所有需要一个逆文档频率！
+    //MLLIB包中有TF-IDF算法，引入即可
 
     // 创建一个分词器，默认按空格分词
     val tokenizer: Tokenizer = new Tokenizer().setInputCol("genres").setOutputCol("words")
 
-    // 用分词器对原始数据做转换，生成新的一列words
+    // 用分词器对原始数据做转换，生成新的一列words  //这里需要传入DataSet，DataFrame其实就是特殊的DataSet！
     val wordsData: DataFrame = tokenizer.transform(movieTagsDF)//输出: [action,sci-fi]    [drama,horror,thriller]
 
     // 引入HashingTF工具，可以把一个词语序列转化成对应的词频
     val hashingTF: HashingTF = new HashingTF().setInputCol("words").setOutputCol("rawFeatures").setNumFeatures(50)//设置维度为50
-    val featurizedData: DataFrame = hashingTF.transform(wordsData)//输出： (50,[40,46],[1.0,1.0])        (50,[26,27,36],[1.0,1.0,1.0])
+    val featurizedData: DataFrame = hashingTF.transform(wordsData)//输出稀疏向量： (50,[40,46],[1.0,1.0])        (50,[26,27,36],[1.0,1.0,1.0])
 
     // 引入IDF工具，可以得到idf模型
     val idf: IDF = new IDF().setInputCol("rawFeatures").setOutputCol("features")
