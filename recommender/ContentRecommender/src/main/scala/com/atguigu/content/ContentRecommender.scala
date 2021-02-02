@@ -62,6 +62,7 @@ object ContentRecommender {
         // 提取mid，name，genres三项作为原始内容特征，分词器默认按照空格做分词
         x => ( x.mid, x.name, x.genres.map(c=> if(c=='|') ' ' else c) )
       )
+      //dataset map成元组之后，结构丢失，这里要给他指定结构（字段名称）
       .toDF("mid", "name", "genres")
       .cache()
 

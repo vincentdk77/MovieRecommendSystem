@@ -75,9 +75,9 @@ case class ESConfig(httpHosts:String, transportHosts:String, index:String, clust
 object DataLoader {
 
   // 定义常量
-  val MOVIE_DATA_PATH = "D:\\Java_Relation\\WorkSpaces\\myproject\\bigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\movies.csv"
-  val RATING_DATA_PATH = "D:\\Java_Relation\\WorkSpaces\\myproject\\bigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\ratings.csv"
-  val TAG_DATA_PATH = "D:\\Java_Relation\\WorkSpaces\\myproject\\bigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\tags.csv"
+  val MOVIE_DATA_PATH = "D:\\JavaRelation\\Workpaces\\myproject\\bigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\movies.csv"
+  val RATING_DATA_PATH = "D:\\JavaRelation\\Workpaces\\myproject\\bigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\ratings.csv"
+  val TAG_DATA_PATH = "D:\\JavaRelation\\Workpaces\\myproject\\bigData\\MovieRecommendSystem\\recommender\\DataLoader\\src\\main\\resources\\tags.csv"
 
   val MONGODB_MOVIE_COLLECTION = "Movie"
   val MONGODB_RATING_COLLECTION = "Rating"
@@ -88,7 +88,7 @@ object DataLoader {
 
     val config = Map(
       "spark.cores" -> "local[*]",
-      "mongo.uri" -> "mongodb://foo-1:27017/recommender",
+      "mongo.uri" -> "mongodb://dk100:27017/recommender",
       "mongo.db" -> "recommender",
       "es.httpHosts" -> "foo-1:9200",
       "es.transportHosts" -> "foo-1:9300",
@@ -131,7 +131,7 @@ object DataLoader {
     implicit val mongoConfig = MongoConfig(config("mongo.uri"), config("mongo.db"))
 
     // 将数据保存到MongoDB
-//    storeDataInMongoDB(movieDF, ratingDF, tagDF)
+    storeDataInMongoDB(movieDF, ratingDF, tagDF)
 
     // 数据预处理，把movie对应的tag信息添加进去，加一列 tag1|tag2|tag3...
     import org.apache.spark.sql.functions._
@@ -141,17 +141,17 @@ object DataLoader {
       *
       * tags: tag1|tag2|tag3...
       */
-    val newTag = tagDF.groupBy($"mid")
-      .agg( concat_ws( "|", collect_set($"tag") ).as("tags") )
-      .select("mid", "tags")
-
-    // newTag和movie做join，数据合并在一起，左外连接
-    val movieWithTagsDF = movieDF.join(newTag, Seq("mid"), "left")
-
-    implicit val esConfig = ESConfig(config("es.httpHosts"), config("es.transportHosts"), config("es.index"), config("es.cluster.name"))
+//    val newTag = tagDF.groupBy($"mid")
+//      .agg( concat_ws( "|", collect_set($"tag") ).as("tags") )
+//      .select("mid", "tags")
+//
+//    // newTag和movie做join，数据合并在一起，左外连接
+//    val movieWithTagsDF = movieDF.join(newTag, Seq("mid"), "left")
+//
+//    implicit val esConfig = ESConfig(config("es.httpHosts"), config("es.transportHosts"), config("es.index"), config("es.cluster.name"))
 
     // 保存数据到ES
-    storeDataInES(movieWithTagsDF)
+//    storeDataInES(movieWithTagsDF)
 
     spark.stop()
   }
