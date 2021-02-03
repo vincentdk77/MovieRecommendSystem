@@ -48,17 +48,19 @@ object ContentRecommenderTest {
     val idf: IDF = new IDF().setInputCol("rawFeatures").setOutputCol("features")
     val idfModel: IDFModel = idf.fit(tfDF)
     val idfDF: DataFrame = idfModel.transform(tfDF)
-    idfDF.show(false)
+//    idfDF.show(false)
 
     val productFeatures: RDD[(Int, Array[Double])] = idfDF.map(row => {
       val mid: Int = row.getAs[Int]("mid")
       val denseVector = row.getAs[SparseVector]("features").toArray
       (mid, denseVector)
-    }).rdd
+    }).rdd.cache()
+//    println(productFeatures.count())
 
+    //3、特征向量RDD的笛卡尔积，再经过转换，得到任意两个电影的相似度
     val cartesianRDD: RDD[((Int, Array[Double]), (Int, Array[Double]))] = productFeatures.cartesian(productFeatures)
 
-    val movieSimRDD: RDD[MovieRecs] = cartesianRDD
+    val movieSimRDD/*: RDD[MovieRecs]*/ = cartesianRDD
       .filter { case (a, b) => a._1 != b._1 }
       .map {
         case ((midA,arrayA), (midB,arrayB)) => {
@@ -67,6 +69,7 @@ object ContentRecommenderTest {
         }
       }
       .filter(_._2._2 > 0.6)
+//    println(movieSimRDD.count())
       .groupByKey()
       .map {
         case (userId, iter) => MovieRecs(
@@ -75,6 +78,7 @@ object ContentRecommenderTest {
           iter.toList.sortWith { _._2 > _._2 }.map { case (mid, score) => Recommendation(mid, score) }
         )
       }
+//    println(movieSimRDD.count())
 
     movieSimRDD.toDF()
       .write
@@ -83,11 +87,6 @@ object ContentRecommenderTest {
       .option("collection",CONTENT_MOVIE_RECS)
       .mode("overwrite")
       .save()
-
-    //3、特征向量RDD的笛卡尔积，再经过转换，得到任意两个电影的相似度
-
-
-
 
   }
 

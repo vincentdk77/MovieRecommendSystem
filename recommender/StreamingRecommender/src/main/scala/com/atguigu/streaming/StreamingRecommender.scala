@@ -25,7 +25,7 @@ import redis.clients.jedis.Jedis
 // 定义连接助手对象，序列化
 object ConnHelper extends Serializable{
   lazy val jedis = new Jedis("localhost")
-  lazy val mongoClient = MongoClient( MongoClientURI("mongodb://localhost:27017/recommender") )
+  lazy val mongoClient = MongoClient( MongoClientURI("mongodb://dk100:27017/recommender") )
 }
 
 case class MongoConfig(uri:String, db:String)
@@ -122,7 +122,7 @@ object StreamingRecommender {
           // 3. todo  核心！ 对每个备选电影，计算推荐优先级，得到当前用户的实时推荐列表，Array[(mid, score)]
           val streamRecs: Array[(Int, Double)] = computeMovieScores(candidateMovies, userRecentlyRatings, simMovieMatrixBroadCast.value)
 
-          // 4. 把推荐数据保存到mongodb
+          // 4. 把推荐数据保存到mongodb（一条数据存一次）
           saveDataToMongoDB( uid, streamRecs )
         }
       }
@@ -180,6 +180,14 @@ object StreamingRecommender {
       .map(x=>x._1)
   }
 
+  /**
+   * 计算得到一个uid对应的推荐列表Array(mid,score)
+   *
+   * @param candidateMovies
+   * @param userRecentlyRatings
+   * @param simMovies
+   * @return
+   */
   def computeMovieScores(candidateMovies: Array[Int],
                          userRecentlyRatings: Array[(Int, Double)],
                          simMovies: scala.collection.Map[Int, scala.collection.immutable.Map[Int, Double]]): Array[(Int, Double)] ={
@@ -231,6 +239,13 @@ object StreamingRecommender {
     math.log(m)/ math.log(N)
   }
 
+  /**
+   * mongoDB存储一条数据，用不到spark的存储方法，这里使用mongodb的 casbah API
+   * todo 其实最好用spring data mongoDB API来存储比较好用
+   * @param uid
+   * @param streamRecs
+   * @param mongoConfig
+   */
   def saveDataToMongoDB(uid: Int, streamRecs: Array[(Int, Double)])(implicit mongoConfig: MongoConfig): Unit ={
     // 定义到StreamRecs表的连接
     val streamRecsCollection = ConnHelper.mongoClient(mongoConfig.db)(MONGODB_STREAM_RECS_COLLECTION)
