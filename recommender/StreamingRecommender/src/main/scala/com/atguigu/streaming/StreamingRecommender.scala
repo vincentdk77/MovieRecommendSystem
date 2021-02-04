@@ -24,7 +24,7 @@ import redis.clients.jedis.Jedis
 
 // 定义连接助手对象，序列化
 object ConnHelper extends Serializable{
-  lazy val jedis = new Jedis("localhost")
+  lazy val jedis = new Jedis("dk100")
   lazy val mongoClient = MongoClient( MongoClientURI("mongodb://dk100:27017/recommender") )
 }
 
@@ -50,7 +50,7 @@ object StreamingRecommender {
   def main(args: Array[String]): Unit = {
     val config = Map(
       "spark.cores" -> "local[*]",
-      "mongo.uri" -> "mongodb://foo-1:27017/recommender",
+      "mongo.uri" -> "mongodb://dk100:27017/recommender",
       "mongo.db" -> "recommender",
       "kafka.topic" -> "recommender"
     )
@@ -85,7 +85,7 @@ object StreamingRecommender {
 
     // 定义kafka连接参数
     val kafkaParam = Map(
-      "bootstrap.servers" -> "localhost:9092",
+      "bootstrap.servers" -> "dk100:9092",
       "key.deserializer" -> classOf[StringDeserializer],
       "value.deserializer" -> classOf[StringDeserializer],
       "group.id" -> "recommender",
@@ -121,6 +121,8 @@ object StreamingRecommender {
 
           // 3. todo  核心！ 对每个备选电影，计算推荐优先级，得到当前用户的实时推荐列表，Array[(mid, score)]
           val streamRecs: Array[(Int, Double)] = computeMovieScores(candidateMovies, userRecentlyRatings, simMovieMatrixBroadCast.value)
+
+          streamRecs.take(20).foreach(println(_))
 
           // 4. 把推荐数据保存到mongodb（一条数据存一次）
           saveDataToMongoDB( uid, streamRecs )
